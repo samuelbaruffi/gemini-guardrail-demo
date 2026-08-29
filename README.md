@@ -337,15 +337,20 @@ curl -X POST "http://127.0.0.1:8080/api/dspy/optimize" \
 
 ### 1. Automated 1-Script Deployment (`deploy.sh`)
 
-The included [`deploy.sh`](deploy.sh) script handles the complete end-to-end setup in a single command:
-1. Enables required Google Cloud APIs (`run`, `cloudbuild`, `aiplatform`).
-2. Detects the project number and automatically binds **GEAP / Vertex AI IAM roles** (`roles/aiplatform.user` and `roles/aiplatform.admin`) to the Cloud Run Service Account.
-3. Builds and deploys the container with `--service-account` properly attached.
+The included [`deploy.sh`](deploy.sh) script handles the complete end-to-end setup in a single command, fully automated for brand-new GCP projects:
+1. **Enables all required APIs**: `run.googleapis.com`, `cloudbuild.googleapis.com`, `artifactregistry.googleapis.com`, `aiplatform.googleapis.com`, and `compute.googleapis.com`.
+2. **Auto-provisions Compute Service Account & IAM**:
+   - Resolves `<project-number>-compute@developer.gserviceaccount.com`.
+   - Binds **Vertex AI IAM roles** (`roles/aiplatform.user` and `roles/aiplatform.admin`) for 24/7 autonomous model inference.
+   - Binds **Cloud Build execution roles** (`roles/storage.objectViewer`, `roles/logging.logWriter`, `roles/artifactregistry.writer`) required by modern Cloud Build default service account architecture.
+3. **Builds & Deploys to Cloud Run**:
+   - Creates the Artifact Registry container repository automatically with non-interactive flags (`--quiet`).
+   - Deploys with `--allow-unauthenticated` and gracefully falls back to `--no-allow-unauthenticated` if enterprise Domain Restricted Sharing (DRS) org policies are active.
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/gemini-guardrail-proxy.git
-cd gemini-guardrail-proxy
+git clone https://github.com/samuelbaruffi/gemini-guardrail-demo.git
+cd gemini-guardrail-demo
 
 # Configure GCP Project
 export GOOGLE_CLOUD_PROJECT="your-project-id"
@@ -358,7 +363,7 @@ chmod +x deploy.sh
 
 ### 2. Launch Local Authenticated Proxy
 
-Connect securely to your Cloud Run deployment from Cloud Shell or your local workstation:
+Connect securely to your Cloud Run deployment from Cloud Shell or your local workstation (requires `cloud-run-proxy` component: `gcloud components install cloud-run-proxy --quiet`):
 
 ```bash
 gcloud run services proxy gemini-guardrail-demo \
@@ -368,6 +373,14 @@ gcloud run services proxy gemini-guardrail-demo \
 ```
 
 Open your browser to: **`http://127.0.0.1:8080`** (or use the Cloud Shell Web Preview on port 8080).
+
+### 3. Run Automated Security Test Suite
+
+Validate all 3 guardrail layers against the live Cloud Run service:
+
+```bash
+PROXY_URL="http://127.0.0.1:8080" python3 test_guardrail.py
+```
 
 ---
 

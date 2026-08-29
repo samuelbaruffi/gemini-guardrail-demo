@@ -253,21 +253,22 @@ def get_access_token() -> str:
         return _cached_token["token"]
 
     # 1. Cloud Run Native Compute Metadata Server (24/7 Auto-Refreshing Service Account Credentials)
-    try:
-        req = urllib.request.Request(
-            "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token",
-            headers={"Metadata-Flavor": "Google"}
-        )
-        with urllib.request.urlopen(req, timeout=1.5) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            token = data.get("access_token")
-            expires_in = data.get("expires_in", 3600)
-            if token:
-                _cached_token["token"] = token
-                _cached_token["expiry"] = now + expires_in
-                return token
-    except Exception:
-        pass
+    for metadata_url in [
+        "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token",
+        "http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token"
+    ]:
+        try:
+            req = urllib.request.Request(metadata_url, headers={"Metadata-Flavor": "Google"})
+            with urllib.request.urlopen(req, timeout=5.0) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                token = data.get("access_token")
+                expires_in = data.get("expires_in", 3600)
+                if token:
+                    _cached_token["token"] = token
+                    _cached_token["expiry"] = now + expires_in
+                    return token
+        except Exception as e:
+            print(f"[get_access_token metadata error ({metadata_url})]: {e}", file=sys.stderr)
 
     # 2. Local Workstation / Cloud Shell CLI Fallback
     try:
@@ -1156,7 +1157,14 @@ class CloudRunHandler(http.server.BaseHTTPRequestHandler):
         elif clean_path == "/api/guardrail/current-prompt":
             self._send_json(200, {"current_prompt": GLOBAL_GUARDRAIL_PROMPT})
         elif clean_path == "/health":
-            self._send_json(200, {"status": "HEALTHY", "guardrail_model": GUARDRAIL_MODEL, "primary_model": DEFAULT_PRIMARY_MODEL})
+            sa_token = get_access_token()
+            self._send_json(200, {
+                "status": "HEALTHY",
+                "guardrail_model": GUARDRAIL_MODEL,
+                "primary_model": DEFAULT_PRIMARY_MODEL,
+                "has_token": bool(sa_token),
+                "token_prefix": sa_token[:10] if sa_token else ""
+            })
         elif clean_path == "/api/sample-fixtures":
             self._send_json(200, {
                 "image_banner": {"filename": "adversarial_banner.png", "mime": "image/png", "base64": FIXTURE_IMAGE_B64},
@@ -1217,7 +1225,10 @@ class CloudRunHandler(http.server.BaseHTTPRequestHandler):
         clean_path = parsed_url.path.rstrip("/")
 
         auth_header = self.headers.get("Authorization") or ""
-        token = (auth_header.replace("Bearer ", "").strip() if auth_header else "") or get_access_token()
+        passed_token = auth_header.replace("Bearer ", "").strip() if auth_header else ""
+        if passed_token.startswith("eyJ"):
+            passed_token = ""
+        token = passed_token or get_access_token()
 
         content_len_str = self.headers.get("Content-Length") or "0"
         try:
