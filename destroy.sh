@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-SERVICE_NAME="gemini-guardrail-demo"
+SERVICE_NAME="${SERVICE_NAME:-gemini-guardrail-demo}"
 REGION="${GOOGLE_CLOUD_REGION:-us-central1}"
 PROJECT_ID="${GOOGLE_CLOUD_PROJECT:-$(gcloud config get-value project 2>/dev/null)}"
 
