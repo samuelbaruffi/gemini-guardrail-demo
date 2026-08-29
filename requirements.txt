@@ -1,0 +1,2 @@
+# Lightweight zero-dependency server
+# Uses Python standard library (http.server, urllib, json, time, os)
